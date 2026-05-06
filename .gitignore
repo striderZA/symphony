@@ -1,0 +1,19 @@
+node_modules/
+.worktrees/
+
+# Python build artifacts
+*.egg-info/
+__pycache__/
+nul
+
+# Editor / OS
+.DS_Store
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Local runtime logs
+log/
+logs/
