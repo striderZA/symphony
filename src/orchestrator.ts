@@ -184,7 +184,10 @@ export class SymphonyOrchestrator {
     const task = (async () => {
       try {
         const ws = this.workspaceManager?.createForIssue(issue.identifier)
-        if (ws && this.workspaceManager) await this.workspaceManager.runBeforeRun(ws)
+        if (ws && this.workspaceManager) {
+          await this.workspaceManager.runAfterCreate(ws)
+          await this.workspaceManager.runBeforeRun(ws)
+        }
         const result = await this.agentRunner.run(issue, `Work on ${issue.identifier}: ${issue.title}`)
         this.onWorkerExit(issue.id, result.success)
       } catch (err) {

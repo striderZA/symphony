@@ -52,7 +52,7 @@ async function main() {
   const maxAgents = await ask('Max concurrent agents', '5')
 
   const afterCreate = repoUrl
-    ? `git clone ${repoUrl} .${targetBranch ? `\n  git checkout ${targetBranch}` : ''}`
+    ? `export GIT_TERMINAL_PROMPT=0\n  git clone ${repoUrl} .${targetBranch ? `\n  git checkout ${targetBranch}` : ''}`
     : undefined
 
   const workflowPath = resolve('WORKFLOW.md')
