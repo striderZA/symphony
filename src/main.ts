@@ -43,8 +43,11 @@ async function main(): Promise<void> {
   const opencodeClient = new HttpOpenCodeClient(config.opencode.serverUrl)
 
   if (config.opencode.serverStartCommand) {
-    const { execSync } = await import('node:child_process')
-    execSync(config.opencode.serverStartCommand, { stdio: 'inherit', cwd: process.cwd() })
+    const { spawn } = await import('node:child_process')
+    const child = spawn(config.opencode.serverStartCommand, { stdio: 'inherit', shell: true, cwd: process.cwd(), detached: true })
+    child.unref()
+    // Give it a moment to start
+    await new Promise((r) => setTimeout(r, 2000))
   }
 
   try {
