@@ -44,7 +44,7 @@ async function main(): Promise<void> {
 
   if (config.opencode.serverStartCommand) {
     const { execSync } = await import('node:child_process')
-    execSync(config.opencode.serverStartCommand, { stdio: 'inherit', shell: true, cwd: process.cwd() })
+    execSync(config.opencode.serverStartCommand, { stdio: 'inherit', cwd: process.cwd() })
   }
 
   try {

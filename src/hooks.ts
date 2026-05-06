@@ -9,7 +9,7 @@ export interface HookResult {
 
 export function execHook(command: string, cwd: string, timeoutMs: number): Promise<HookResult> {
   return new Promise((resolve) => {
-    const child = exec(command, { cwd, timeout: timeoutMs, shell: true }, (err, stdout, stderr) => {
+    const child = exec(command, { cwd, timeout: timeoutMs }, (err, stdout, stderr) => {
       if (err) {
         const isTimeout = (err.killed || err.message?.includes('timeout'))
         resolve({

@@ -31,11 +31,8 @@ export class WorkspaceManager {
     const ws: Workspace = { path: wsPath, workspaceKey: key, createdNow: !exists }
 
     if (ws.createdNow && this.config.afterCreate) {
-      const result = execHook(this.config.afterCreate, wsPath, this.config.hookTimeoutMs ?? 60000)
-      if (!result.success || !result.then) {
-        const r = result as any
-        if (r.success === false) throw new Error(`after_create hook failed: ${r.error}`)
-      }
+      execHook(this.config.afterCreate, wsPath, this.config.hookTimeoutMs ?? 60000)
+        .catch((e) => { getLogger().error({ error: String(e) }, 'after_create_hook_failed') })
     }
 
     return ws
