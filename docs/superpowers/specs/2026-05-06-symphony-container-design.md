@@ -9,9 +9,9 @@ Package Symphony and the OpenCode HTTP server into a single Podman container so 
 
 **Installed packages:**
 - `bun` (official install script)
-- `opencode-ai` (npm global)
-- `git`, `openssh-client`
-- `curl`, `ca-certificates`
+- `nodejs` (from Ubuntu repo — needed by opencode binary)
+- `opencode-ai` (bun install -g)
+- `git`, `openssh-client`, `curl`, `ca-certificates`, `unzip`
 
 ## Entrypoint
 
@@ -34,21 +34,21 @@ All mounts are from the WSL2 Linux filesystem into the container:
 | `~/.ssh/` | `/root/.ssh/` | SSH keys for git clone |
 | `~/.gitconfig` | `/root/.gitconfig` | Git identity |
 
-## Build
+## Containerfile
 
 ```dockerfile
 FROM ubuntu:24.04
 
 RUN apt-get update && apt-get install -y \
-    curl unzip git openssh-client ca-certificates \
+    curl ca-certificates git openssh-client unzip nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 # Install bun
 RUN curl -fsSL https://bun.sh/install | bash
 ENV PATH="/root/.bun/bin:${PATH}"
 
-# Install opencode
-RUN npm install -g opencode-ai
+# Install opencode via bun (npm not available)
+RUN bun install -g opencode-ai
 
 WORKDIR /app
 
