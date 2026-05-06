@@ -4,6 +4,7 @@ import { createOrchestratorState } from './models'
 import type { TrackerAdapter } from './tracker/base'
 import type { AgentRunner } from './agent_runner'
 import type { WorkspaceManager } from './workspace'
+import { renderPrompt } from './prompt_builder'
 
 export function dispatchKey(issue: Issue): [number, number, string] {
   const prio = issue.priority ?? 9999
@@ -51,6 +52,7 @@ export interface OrchestratorConfig {
   tracker: TrackerAdapter
   agentRunner: AgentRunner
   workspaceManager?: WorkspaceManager
+  promptTemplate?: string
   maxConcurrent?: number
   pollIntervalMs?: number
   activeStates?: string[]
@@ -66,6 +68,7 @@ export class SymphonyOrchestrator {
   private tracker: TrackerAdapter
   private agentRunner: AgentRunner
   private workspaceManager?: WorkspaceManager
+  private promptTemplate?: string
   private activeStates: string[]
   private terminalStates: string[]
   private maxTurns: number
@@ -84,6 +87,7 @@ export class SymphonyOrchestrator {
     this.tracker = config.tracker
     this.agentRunner = config.agentRunner
     this.workspaceManager = config.workspaceManager
+    this.promptTemplate = config.promptTemplate
     this.activeStates = config.activeStates ?? ['Todo', 'In Progress']
     this.terminalStates = config.terminalStates ?? ['Closed', 'Cancelled', 'Canceled', 'Duplicate', 'Done']
     this.maxTurns = config.maxTurns ?? 20
@@ -195,7 +199,10 @@ export class SymphonyOrchestrator {
           const entry = this.state.running.get(issue.id)
           if (entry) entry.sessionId = sessionId
         })
-        const result = await runner.run(issue, `Work on ${issue.identifier}: ${issue.title}`)
+        const prompt = renderPrompt(this.promptTemplate ?? '', issue, attempt ?? 0, {
+          workspace: ws ? { path: ws.path, key: ws.workspaceKey } : null,
+        }) + (ws ? `\n\n## Workspace\n\nYour workspace is at \`${ws.path}\`. All work must be done inside this directory.` : '')
+        const result = await runner.run(issue, prompt)
         this.onWorkerExit(issue.id, result.success)
       } catch (err) {
         getLogger().error({ issueId: issue.id, error: String(err) }, 'worker_failed')

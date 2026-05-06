@@ -62,6 +62,7 @@ async function main(): Promise<void> {
   const agentRunner = new AgentRunner(opencodeClient)
   const orch = new SymphonyOrchestrator({
     tracker, agentRunner, workspaceManager: wsManager,
+    promptTemplate: store.workflow?.promptTemplate,
     maxConcurrent: config.agent.maxConcurrentAgents, pollIntervalMs: config.polling.intervalMs,
     activeStates: config.tracker.activeStates, terminalStates: config.tracker.terminalStates,
     maxTurns: config.agent.maxTurns, maxRetryBackoffMs: config.agent.maxRetryBackoffMs,

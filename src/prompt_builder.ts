@@ -6,7 +6,12 @@ const engine = new Liquid({
   strictFilters: true,
 })
 
-export function renderPrompt(template: string, issue: Issue, attempt: number | null): string {
+export function renderPrompt(
+  template: string,
+  issue: Issue,
+  attempt: number | null,
+  extra?: Record<string, unknown>,
+): string {
   const ctx: Record<string, unknown> = {
     issue: {
       id: issue.id,
@@ -27,6 +32,7 @@ export function renderPrompt(template: string, issue: Issue, attempt: number | n
       updated_at: issue.updatedAt?.toISOString() ?? null,
     },
     attempt: attempt ?? null,
+    ...extra,
   }
 
   return engine.parseAndRenderSync(template, ctx)

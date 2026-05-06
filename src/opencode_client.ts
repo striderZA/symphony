@@ -1,6 +1,6 @@
 export interface OpenCodeClient {
   createSession(title: string): Promise<string>
-  sendMessage(sessionId: string, prompt: string): Promise<void>
+  sendMessage(sessionId: string, prompt: string): Promise<string>
   deleteSession(sessionId: string): Promise<void>
 }
 
@@ -20,7 +20,7 @@ export class HttpOpenCodeClient implements OpenCodeClient {
     return data.id
   }
 
-  async sendMessage(sessionId: string, prompt: string): Promise<void> {
+  async sendMessage(sessionId: string, prompt: string): Promise<string> {
     // Sync call — blocks until AI fully responds
     const res = await fetch(`${this.baseUrl}/session/${sessionId}/message`, {
       method: 'POST',
@@ -28,6 +28,9 @@ export class HttpOpenCodeClient implements OpenCodeClient {
       body: JSON.stringify({ parts: [{ type: 'text', text: prompt }] }),
     })
     if (!res.ok) throw new Error(`Failed to send message: ${res.status}`)
+    const data = await res.json() as { parts: { type: string; text?: string }[] }
+    const textParts = data.parts.filter((p) => p.type === 'text')
+    return textParts.map((p) => p.text ?? '').join('\n')
   }
 
   async deleteSession(sessionId: string): Promise<void> {

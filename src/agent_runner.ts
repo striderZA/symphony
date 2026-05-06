@@ -24,9 +24,8 @@ export class AgentRunner {
       log.info({ issueId: issue.id, sessionId }, 'session_created')
       this.onSessionCreated?.(sessionId)
 
-      // Sync call — blocks until the AI fully responds
-      await this.client.sendMessage(sessionId, prompt)
-      log.info({ issueId: issue.id, sessionId }, 'prompt_completed')
+      const result = await this.client.sendMessage(sessionId, prompt)
+      log.info({ issueId: issue.id, sessionId, outputLength: result.length }, 'prompt_completed')
 
       return { sessionId, success: true }
     } catch (err) {

@@ -7,7 +7,7 @@ describe('AgentRunner', () => {
   it('creates session and sends prompt', async () => {
     const client: OpenCodeClient = {
       createSession: vi.fn().mockResolvedValue('session-1'),
-      sendMessage: vi.fn().mockResolvedValue(undefined),
+      sendMessage: vi.fn().mockResolvedValue('Task completed'),
       deleteSession: vi.fn(),
     }
     const runner = new AgentRunner(client)
@@ -22,7 +22,7 @@ describe('AgentRunner', () => {
   it('calls session created callback', async () => {
     const client: OpenCodeClient = {
       createSession: vi.fn().mockResolvedValue('session-1'),
-      sendMessage: vi.fn().mockResolvedValue(undefined),
+      sendMessage: vi.fn().mockResolvedValue('done'),
       deleteSession: vi.fn(),
     }
     const runner = new AgentRunner(client)
