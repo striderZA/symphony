@@ -1,13 +1,6 @@
-export interface SessionStatus {
-  id: string
-  status: string
-  title?: string
-}
-
 export interface OpenCodeClient {
   createSession(title: string): Promise<string>
   sendMessage(sessionId: string, prompt: string): Promise<void>
-  getSessionStatus(sessionId: string): Promise<SessionStatus>
   deleteSession(sessionId: string): Promise<void>
 }
 
@@ -28,20 +21,13 @@ export class HttpOpenCodeClient implements OpenCodeClient {
   }
 
   async sendMessage(sessionId: string, prompt: string): Promise<void> {
-    const res = await fetch(`${this.baseUrl}/session/${sessionId}/prompt_async`, {
+    // Sync call — blocks until AI fully responds
+    const res = await fetch(`${this.baseUrl}/session/${sessionId}/message`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ parts: [{ type: 'text', text: prompt }] }),
     })
     if (!res.ok) throw new Error(`Failed to send message: ${res.status}`)
-    // Small delay so the AI picks up the message before we poll
-    await new Promise((r) => setTimeout(r, 1000))
-  }
-
-  async getSessionStatus(sessionId: string): Promise<SessionStatus> {
-    const res = await fetch(`${this.baseUrl}/session/${sessionId}`)
-    if (!res.ok) throw new Error(`Failed to get session: ${res.status}`)
-    return await res.json() as SessionStatus
   }
 
   async deleteSession(sessionId: string): Promise<void> {

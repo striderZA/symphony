@@ -1,5 +1,5 @@
 import type { Issue } from './models'
-import type { OpenCodeClient, SessionStatus } from './opencode_client'
+import type { OpenCodeClient } from './opencode_client'
 import { getLogger } from './log'
 
 export interface AgentRunResult {
@@ -9,33 +9,30 @@ export interface AgentRunResult {
 }
 
 export class AgentRunner {
+  private onSessionCreated: ((sessionId: string) => void) | null = null
+
   constructor(private client: OpenCodeClient) {}
+
+  setSessionCreatedCallback(cb: (sessionId: string) => void): void {
+    this.onSessionCreated = cb
+  }
 
   async run(issue: Issue, prompt: string): Promise<AgentRunResult> {
     const log = getLogger()
     try {
       const sessionId = await this.client.createSession(`${issue.identifier}: ${issue.title}`)
       log.info({ issueId: issue.id, sessionId }, 'session_created')
-      await this.client.sendMessage(sessionId, prompt)
-      log.info({ issueId: issue.id, sessionId }, 'prompt_sent')
+      this.onSessionCreated?.(sessionId)
 
-      const status = await this.pollForCompletion(sessionId)
-      return { sessionId, success: status.status === 'completed' || status.status === 'idle', error: status.status === 'failed' ? 'Session failed' : undefined }
+      // Sync call — blocks until the AI fully responds
+      await this.client.sendMessage(sessionId, prompt)
+      log.info({ issueId: issue.id, sessionId }, 'prompt_completed')
+
+      return { sessionId, success: true }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       log.error({ issueId: issue.id, error: message }, 'agent_run_failed')
       return { sessionId: null, success: false, error: message }
     }
-  }
-
-  private async pollForCompletion(sessionId: string): Promise<SessionStatus> {
-    const maxAttempts = 7200  // 10 hours at 5s intervals
-    const pollIntervalMs = 5000
-    for (let i = 0; i < maxAttempts; i++) {
-      const status = await this.client.getSessionStatus(sessionId)
-      if (status.status !== 'active') return status
-      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
-    }
-    throw new Error('Session did not complete within poll limit')
   }
 }

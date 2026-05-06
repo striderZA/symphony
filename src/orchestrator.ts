@@ -141,6 +141,8 @@ export class SymphonyOrchestrator {
     const now = new Date()
     const toRemove: string[] = []
     for (const [issueId, entry] of this.state.running) {
+      // Skip entries with an active OpenCode session — they're blocked on sync HTTP
+      if (entry.sessionId) continue
       const reference = entry.lastCodexTimestamp ?? entry.startedAt
       if (!reference) continue
       if (now.getTime() - reference.getTime() > this.stallTimeoutMs) {
@@ -181,6 +183,7 @@ export class SymphonyOrchestrator {
 
   private dispatchIssue(issue: Issue, attempt?: number | null): void {
     const abortController = new AbortController()
+    const runner = this.agentRunner
     const task = (async () => {
       try {
         const ws = this.workspaceManager?.createForIssue(issue.identifier)
@@ -188,7 +191,11 @@ export class SymphonyOrchestrator {
           await this.workspaceManager.runAfterCreate(ws)
           await this.workspaceManager.runBeforeRun(ws)
         }
-        const result = await this.agentRunner.run(issue, `Work on ${issue.identifier}: ${issue.title}`)
+        runner.setSessionCreatedCallback((sessionId) => {
+          const entry = this.state.running.get(issue.id)
+          if (entry) entry.sessionId = sessionId
+        })
+        const result = await runner.run(issue, `Work on ${issue.identifier}: ${issue.title}`)
         this.onWorkerExit(issue.id, result.success)
       } catch (err) {
         getLogger().error({ issueId: issue.id, error: String(err) }, 'worker_failed')

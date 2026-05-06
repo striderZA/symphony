@@ -8,7 +8,6 @@ describe('AgentRunner', () => {
     const client: OpenCodeClient = {
       createSession: vi.fn().mockResolvedValue('session-1'),
       sendMessage: vi.fn().mockResolvedValue(undefined),
-      getSessionStatus: vi.fn().mockResolvedValue({ id: 'session-1', status: 'completed' }),
       deleteSession: vi.fn(),
     }
     const runner = new AgentRunner(client)
@@ -17,26 +16,27 @@ describe('AgentRunner', () => {
     expect(result.success).toBe(true)
     expect(result.sessionId).toBe('session-1')
     expect(client.createSession).toHaveBeenCalledWith('MT-1: Test')
+    expect(client.sendMessage).toHaveBeenCalledWith('session-1', 'Work on this')
   })
 
-  it('handles session failure', async () => {
+  it('calls session created callback', async () => {
     const client: OpenCodeClient = {
-      createSession: vi.fn().mockResolvedValue('session-2'),
+      createSession: vi.fn().mockResolvedValue('session-1'),
       sendMessage: vi.fn().mockResolvedValue(undefined),
-      getSessionStatus: vi.fn().mockResolvedValue({ id: 'session-2', status: 'failed' }),
       deleteSession: vi.fn(),
     }
     const runner = new AgentRunner(client)
+    const cb = vi.fn()
+    runner.setSessionCreatedCallback(cb)
     const issue = { id: 'abc', identifier: 'MT-1', title: 'Test', state: 'Todo' } as Issue
-    const result = await runner.run(issue, 'Work')
-    expect(result.success).toBe(false)
-    expect(result.error).toBe('Session failed')
+    await runner.run(issue, 'Work')
+    expect(cb).toHaveBeenCalledWith('session-1')
   })
 
   it('handles client errors', async () => {
     const client: OpenCodeClient = {
       createSession: vi.fn().mockRejectedValue(new Error('Connection refused')),
-      sendMessage: vi.fn(), getSessionStatus: vi.fn(), deleteSession: vi.fn(),
+      sendMessage: vi.fn(), deleteSession: vi.fn(),
     }
     const runner = new AgentRunner(client)
     const issue = { id: 'abc', identifier: 'MT-1', title: 'Test', state: 'Todo' } as Issue
