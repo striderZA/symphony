@@ -1,3 +1,4 @@
+import asyncio
 import pytest
 from datetime import datetime, timezone
 from symphony.models import (
@@ -131,3 +132,76 @@ def test_terminate_running_issue():
     state = terminate_running_issue(state, "1", cleanup_workspace=True)
     assert "1" not in state.running
     assert "1" not in state.claimed
+
+
+@pytest.mark.asyncio
+async def test_poll_loop_dispatch():
+    from symphony.orchestrator import SymphonyOrchestrator
+    from symphony.tracker.memory import MemoryTracker
+
+    tracker = MemoryTracker(issues=[
+        Issue(id="1", identifier="PROJ-1", title="Fix", state="Todo", priority=1),
+        Issue(id="2", identifier="PROJ-2", title="Done task", state="Done"),
+    ])
+    orch = SymphonyOrchestrator(
+        tracker=tracker,
+        max_concurrent=5,
+        poll_interval_ms=60000,
+    )
+    await orch._tick()
+    assert "1" in orch.state.running
+    assert "2" not in orch.state.running
+
+
+@pytest.mark.asyncio
+async def test_worker_exit_normal():
+    from symphony.orchestrator import SymphonyOrchestrator
+    from symphony.tracker.memory import MemoryTracker
+
+    tracker = MemoryTracker(issues=[
+        Issue(id="1", identifier="PROJ-1", title="Fix", state="Todo"),
+    ])
+    orch = SymphonyOrchestrator(tracker=tracker, max_concurrent=5, poll_interval_ms=60000)
+    await orch._tick()
+    assert "1" in orch.state.running
+    orch._on_worker_exit("1", normal=True)
+    assert "1" not in orch.state.running
+    assert "1" in orch.state.retry_attempts
+    assert orch.state.retry_attempts["1"].attempt == 1
+
+
+@pytest.mark.asyncio
+async def test_worker_exit_abnormal():
+    from symphony.orchestrator import SymphonyOrchestrator
+    from symphony.tracker.memory import MemoryTracker
+
+    tracker = MemoryTracker(issues=[
+        Issue(id="1", identifier="PROJ-1", title="Fix", state="Todo"),
+    ])
+    orch = SymphonyOrchestrator(tracker=tracker, max_concurrent=5, poll_interval_ms=60000)
+    await orch._tick()
+    orch.state.running["1"].retry_attempt = 2
+    orch._on_worker_exit("1", normal=False)
+    assert "1" not in orch.state.running
+    assert "1" in orch.state.retry_attempts
+    assert orch.state.retry_attempts["1"].attempt == 3
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_removes_terminal():
+    from symphony.orchestrator import SymphonyOrchestrator
+    from symphony.tracker.memory import MemoryTracker
+
+    tracker = MemoryTracker(issues=[
+        Issue(id="1", identifier="PROJ-1", title="Fix", state="Done"),
+    ])
+    orch = SymphonyOrchestrator(tracker=tracker, max_concurrent=5, poll_interval_ms=60000)
+    orch.state.running["1"] = RunningEntry(
+        task=asyncio.create_task(asyncio.sleep(9999)),
+        identifier="PROJ-1",
+        issue=Issue(id="1", identifier="PROJ-1", title="Fix", state="In Progress"),
+    )
+    orch.state.claimed.add("1")
+    await orch._reconcile_running()
+    assert "1" not in orch.state.running
+    assert "1" not in orch.state.claimed
