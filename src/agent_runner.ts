@@ -29,7 +29,7 @@ export class AgentRunner {
   }
 
   private async pollForCompletion(sessionId: string): Promise<SessionStatus> {
-    const maxAttempts = 60
+    const maxAttempts = 7200  // 10 hours at 5s intervals
     const pollIntervalMs = 5000
     for (let i = 0; i < maxAttempts; i++) {
       const status = await this.client.getSessionStatus(sessionId)

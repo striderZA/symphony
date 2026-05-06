@@ -28,12 +28,14 @@ export class HttpOpenCodeClient implements OpenCodeClient {
   }
 
   async sendMessage(sessionId: string, prompt: string): Promise<void> {
-    const res = await fetch(`${this.baseUrl}/session/${sessionId}/message`, {
+    const res = await fetch(`${this.baseUrl}/session/${sessionId}/prompt_async`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ parts: [{ type: 'text', text: prompt }] }),
     })
     if (!res.ok) throw new Error(`Failed to send message: ${res.status}`)
+    // Small delay so the AI picks up the message before we poll
+    await new Promise((r) => setTimeout(r, 1000))
   }
 
   async getSessionStatus(sessionId: string): Promise<SessionStatus> {
