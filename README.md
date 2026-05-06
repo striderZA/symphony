@@ -25,14 +25,17 @@ Tell your favorite coding agent to build Symphony in a programming language of y
 > Implement Symphony according to the following spec:
 > https://github.com/openai/symphony/blob/main/SPEC.md
 
-### Option 2. Use our experimental reference implementation
+### Option 2. Use a reference implementation
 
-Check out [elixir/README.md](elixir/README.md) for instructions on how to set up your environment
-and run the Elixir-based Symphony implementation. You can also ask your favorite coding agent to
-help with the setup:
+- **Python** — `python/` directory. See [python/README.md](python/README.md) for setup instructions.
+  - asyncio-native, FastAPI dashboard, Jinja2 prompt rendering, 100+ tests.
+- **Elixir** — `elixir/` directory. See [elixir/README.md](elixir/README.md) for setup instructions.
+  - Elixir/OTP with Phoenix LiveView dashboard.
+
+You can also ask your favorite coding agent to help with the setup:
 
 > Set up Symphony for my repository based on
-> https://github.com/openai/symphony/blob/main/elixir/README.md
+> https://github.com/openai/symphony/blob/main/python/README.md
 
 ---
 
