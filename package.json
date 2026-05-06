@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun src/main.ts",
+    "setup": "bun src/setup.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
