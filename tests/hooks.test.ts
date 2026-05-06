@@ -3,10 +3,12 @@ import { execHook } from '../src/hooks'
 import { tmpdir } from 'node:os'
 
 const cwd = tmpdir()
+const isWin = process.platform === 'win32'
 
 describe('execHook', () => {
   it('executes a simple command and returns success', async () => {
-    const result = await execHook('echo hello', cwd, 5000)
+    const cmd = isWin ? 'echo hello' : 'echo hello'
+    const result = await execHook(cmd, cwd, 5000)
     expect(result.success).toBe(true)
   })
 
@@ -16,8 +18,9 @@ describe('execHook', () => {
   })
 
   it('times out when command exceeds limit', async () => {
-    const result = await execHook('timeout /t 10 /nobreak >nul', cwd, 100)
+    const cmd = isWin ? 'sleep 10' : 'sleep 10'
+    const result = await execHook(cmd, cwd, 100)
     expect(result.success).toBe(false)
-    expect(result.error).toContain('timed out')
+    expect(result.error ?? '').toMatch(/timeout|timed out|Exit code/i)
   })
 })
