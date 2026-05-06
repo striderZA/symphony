@@ -67,7 +67,7 @@ async function main() {
 tracker:
   kind: linear
   project_slug: ${projectSlug}
-${apiKey ? `  api_key: $LINEAR_API_KEY` : ''}
+${apiKey && existingApiKey ? `  api_key: $LINEAR_API_KEY` : apiKey ? `  api_key: ${apiKey}` : ''}
 opencode:
   server_url: http://localhost:${port}
 workspace:
@@ -143,6 +143,7 @@ The project is cloned at the workspace path. Work inside the workspace directory
 
   // Validate the generated workflow
   try {
+    if (existingApiKey) process.env.LINEAR_API_KEY = existingApiKey
     const wf = loadWorkflow(workflowPath)
     const cfg = buildServiceConfig(wf)
     const errs = validateDispatchConfig(cfg)
@@ -156,8 +157,6 @@ The project is cloned at the workspace path. Work inside the workspace directory
     console.log(`  ✗ Workflow validation failed: ${err}`)
     ok = false
   }
-
-  rl.close()
 
   console.log(``)
   if (!ok) {
@@ -184,6 +183,8 @@ The project is cloned at the workspace path. Work inside the workspace directory
     })
     child.on('exit', (code) => process.exit(code ?? 0))
   }
+
+  rl.close()
 }
 
 main().catch((err) => { console.error('Setup failed:', err); process.exit(1) })
