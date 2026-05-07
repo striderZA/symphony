@@ -58,12 +58,12 @@ async function main(): Promise<void> {
   }
 
   try {
-    const health = await fetch(`${config.opencode.serverUrl}/global/health`)
+    const health = await fetch(`${config.opencode.serverUrl}/global/health`, { signal: AbortSignal.timeout(5000) })
     if (!health.ok) throw new Error(`Health check returned ${health.status}`)
     log.info({ serverUrl: config.opencode.serverUrl }, 'opencode_server_connected')
   } catch (err) {
-    log.error({ error: String(err) }, 'opencode_server_unreachable')
-    process.exit(1)
+    log.warn({ error: String(err), serverUrl: config.opencode.serverUrl }, 'opencode_health_check_failed')
+    log.warn('Proceeding despite health check failure; first session request will confirm connectivity')
   }
 
   const agentRunner = new AgentRunner(opencodeClient, {
