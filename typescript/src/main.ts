@@ -3,7 +3,7 @@ import { validateDispatchConfig } from './config'
 import { configureLogging, getLogger } from './log'
 import { SymphonyOrchestrator } from './orchestrator'
 import { AgentRunner } from './agent_runner'
-import { HttpOpenCodeClient } from './opencode_client'
+import { createOpencodeClient } from '@opencode-ai/sdk/v2'
 import { WorkspaceManager } from './workspace'
 import { LinearTracker } from './tracker/linear'
 import { logSnapshot } from './status'
@@ -47,7 +47,7 @@ async function main(): Promise<void> {
     afterRun: config.hooks.afterRun, beforeRemove: config.hooks.beforeRemove, hookTimeoutMs: config.hooks.timeoutMs,
   })
 
-  const opencodeClient = new HttpOpenCodeClient(config.opencode.serverUrl)
+  const client = createOpencodeClient({ baseUrl: config.opencode.serverUrl })
 
   if (config.opencode.serverStartCommand) {
     const { spawn } = await import('node:child_process')
@@ -65,10 +65,7 @@ async function main(): Promise<void> {
     log.warn('Proceeding despite health check failure; first session request will confirm connectivity')
   }
 
-  const agentRunner = new AgentRunner(opencodeClient, {
-    maxTurns: config.agent.maxTurns,
-    issueStateFetcher: (ids) => tracker.fetchIssueStatesByIds(ids),
-  })
+  const agentRunner = new AgentRunner(client)
   const orch = new SymphonyOrchestrator({
     tracker, agentRunner, workspaceManager: wsManager,
     promptTemplate: store.workflow?.promptTemplate,
@@ -112,6 +109,7 @@ async function main(): Promise<void> {
   log.info('symphony_started')
   await orch.run()
   log.info('symphony_stopped')
+  process.exit(0)
 }
 
 main().catch((err) => { console.error('Fatal:', err); process.exit(1) })
