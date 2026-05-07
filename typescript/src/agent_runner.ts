@@ -1,84 +1,142 @@
 import type { Issue } from './models'
-import type { OpenCodeClient } from './opencode_client'
-import { getLogger, withIssueContext } from './log'
-
-const CONTINUATION_GUIDANCE = (turn: number, maxTurns: number) => `
-Continuation guidance:
-
-- The previous Codex turn completed normally, but the Linear issue is still in an active state.
-- This is continuation turn ${turn} of ${maxTurns} for the current agent run.
-- Resume from the current workspace state instead of restarting from scratch.
-- The original task instructions are already present in this thread.
-- Focus on the remaining ticket work.
-`
+import { getLogger } from './log'
+import type { OpencodeClient } from '@opencode-ai/sdk/v2'
 
 export interface AgentRunResult {
   sessionId: string | null
   success: boolean
   error?: string
-  turnsCompleted: number
 }
 
-export interface AgentRunnerConfig {
-  maxTurns: number
-  issueStateFetcher: (issueIds: string[]) => Promise<Issue[]>
-}
+/** Matches the SDK's PermissionRule — inlined to avoid subpath export issues */
+type PermissionRule = { permission: string; pattern: string; action: 'allow' | 'deny' | 'ask' }
+
+const PERMISSIONS: PermissionRule[] = [
+  { permission: 'edit',               pattern: '*', action: 'allow' },
+  { permission: 'bash',               pattern: '*', action: 'allow' },
+  { permission: 'webfetch',           pattern: '*', action: 'allow' },
+  { permission: 'doom_loop',          pattern: '*', action: 'allow' },
+  { permission: 'external_directory', pattern: '*', action: 'allow' },
+]
 
 export class AgentRunner {
-  constructor(
-    private client: OpenCodeClient,
-    private config: AgentRunnerConfig,
-  ) {}
+  private onSessionCreated: ((sessionId: string) => void) | null = null
+
+  constructor(private client: OpencodeClient) {}
+
+  setSessionCreatedCallback(cb: (sessionId: string) => void): void {
+    this.onSessionCreated = cb
+  }
 
   async run(issue: Issue, prompt: string): Promise<AgentRunResult> {
-    const log = withIssueContext(getLogger(), { issueId: issue.id, issueIdentifier: issue.identifier })
-    let turnsCompleted = 0
-    let currentSessionId: string | null = null
-
+    const log = getLogger()
+    let sessionId: string | null = null
     try {
-      currentSessionId = await this.client.createSession(`${issue.identifier}: ${issue.title}`)
-      log.info({ sessionId: currentSessionId }, 'session_created')
+      const created = await this.client.session.create({
+        title: `${issue.identifier}: ${issue.title}`,
+        permission: PERMISSIONS,
+      })
+      sessionId = created.data!.id
+      log.info({ issueId: issue.id, sessionId }, 'session_created')
+      this.onSessionCreated?.(sessionId)
 
-      const { threadId, turnId: firstTurnId } = await this.client.startTurn(currentSessionId)
-      log.info({ sessionId: currentSessionId, threadId, turnId: firstTurnId }, 'first_turn_started')
+      await this.client.session.promptAsync({
+        sessionID: sessionId,
+        parts: [{ type: 'text', text: prompt }],
+      })
+      log.info({ issueId: issue.id, sessionId }, 'prompt_sent')
 
-      await this.client.sendMessage(currentSessionId, prompt)
-      turnsCompleted = 1
+      const result = await detectSessionResult(this.client, sessionId, issue.id, log)
 
-      for (let turn = 2; turn <= this.config.maxTurns; turn++) {
-        const refreshedIssue = await this.refreshIssueState(issue.id)
-        if (!refreshedIssue || !this.isActiveState(refreshedIssue.state)) {
-          log.info({ turnsCompleted: turn - 1 }, 'issue_no_longer_active')
-          break
-        }
-
-        const { turnId } = await this.client.startTurn(currentSessionId)
-        log.info({ sessionId: currentSessionId, turnId, turnNum: turn }, 'continuation_turn_started')
-
-        await this.client.sendMessage(currentSessionId, CONTINUATION_GUIDANCE(turn, this.config.maxTurns))
-        turnsCompleted = turn
+      if (result.error) {
+        log.warn({ issueId: issue.id, sessionId, error: result.error }, 'session_error')
+        return { sessionId, success: false, error: result.error }
       }
 
-      log.info({ turnsCompleted }, 'agent_run_completed')
-      return { sessionId: currentSessionId, success: true, turnsCompleted }
+      log.info({ issueId: issue.id, sessionId }, 'session_idle')
+      return { sessionId, success: true }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
-      log.error({ error: message }, 'agent_run_failed')
-      return { sessionId: currentSessionId, success: false, error: message, turnsCompleted }
+      log.error({ issueId: issue.id, error: message }, 'agent_run_failed')
+      return { sessionId: null, success: false, error: message }
     }
   }
+}
 
-  private async refreshIssueState(issueId: string): Promise<Issue | null> {
+async function detectSessionResult(
+  client: OpencodeClient,
+  sessionID: string,
+  issueID: string,
+  log: ReturnType<typeof getLogger>,
+): Promise<{ error?: string }> {
+  const abort = new AbortController()
+
+  try {
+    const sse = await client.event.subscribe(undefined, {
+      signal: abort.signal,
+    })
+
+    const safetyTimer = setInterval(async () => {
+      try {
+        const statuses = await client.session.status()
+        const s = statuses.data?.[sessionID]
+        if (s?.type === 'idle' || s?.type === 'retry') {
+          abort.abort()
+        }
+      } catch { /* safety poll failure is non-fatal */ }
+    }, 30_000)
+
     try {
-      const issues = await this.config.issueStateFetcher([issueId])
-      return issues[0] ?? null
-    } catch {
-      return null
+      for await (const event of sse.stream) {
+        if (event.type === 'session.idle') {
+          const props = (event as any).properties
+          if (props?.sessionID === sessionID) {
+            abort.abort()
+            log.info({ issueID, sessionID }, 'session_idle_event')
+            return {}
+          }
+        }
+        if (event.type === 'session.error') {
+          const props = (event as any).properties
+          if (props?.sessionID === sessionID) {
+            abort.abort()
+            const errMsg = props?.error?.message ?? 'session_error'
+            log.warn({ issueID, sessionID, error: errMsg }, 'session_error_event')
+            return { error: errMsg }
+          }
+        }
+        if (event.type === 'permission.asked') {
+          const props = (event as any).properties
+          if (props?.sessionID === sessionID && props?.id) {
+            client.permission.reply({
+              requestID: props.id,
+              reply: 'always',
+            }).catch(() => {})
+            log.info({ issueID, sessionID, permId: props.id }, 'permission_auto_approved')
+          }
+        }
+      }
+    } finally {
+      clearInterval(safetyTimer)
     }
-  }
 
-  private isActiveState(state: string): boolean {
-    const terminalStates = ['closed', 'cancelled', 'canceled', 'duplicate', 'done']
-    return !terminalStates.includes(state.toLowerCase())
+    // SSE stream ended — fall back to explicit status check
+    const statuses = await client.session.status()
+    const s = statuses.data?.[sessionID]
+    if (s?.type === 'idle') return {}
+    if (s?.type === 'retry') return { error: s.message || 'session_retry' }
+    return { error: 'stream_ended' }
+  } catch (err: unknown) {
+    if ((err as any)?.name === 'AbortError') {
+      // Abort triggered by idle/error event or safety poll — check status
+      try {
+        const statuses = await client.session.status()
+        const s = statuses.data?.[sessionID]
+        if (s?.type === 'idle') return {}
+        if (s?.type === 'retry') return { error: s.message || 'session_retry' }
+      } catch { /* status check failed after abort — assume clean exit */ }
+      return {}
+    }
+    return { error: err instanceof Error ? err.message : String(err) }
   }
 }
