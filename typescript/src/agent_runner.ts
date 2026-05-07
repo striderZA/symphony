@@ -1,3 +1,4 @@
+import type { Issue } from './models'
 import { getLogger } from './log'
 import type { OpencodeClient } from '@opencode-ai/sdk/v2'
 
@@ -5,6 +6,12 @@ export interface AgentRunResult {
   sessionId: string | null
   success: boolean
   error?: string
+  turnsCompleted: number
+}
+
+export interface AgentRunnerConfig {
+  maxTurns: number
+  issueStateFetcher: (issueIds: string[]) => Promise<Issue[]>
 }
 
 /** Matches the SDK's PermissionRule — inlined to avoid subpath export issues */
@@ -18,10 +25,23 @@ const PERMISSIONS: PermissionRule[] = [
   { permission: 'external_directory', pattern: '*', action: 'allow' },
 ]
 
-export class AgentRunner {
-  constructor(private client: OpencodeClient) {}
+const CONTINUATION_GUIDANCE = (turn: number, maxTurns: number) => `
+Continuation guidance:
 
-  async run(issue: { id: string; identifier: string; title: string }, prompt: string): Promise<AgentRunResult> {
+- The previous Codex turn completed normally, but the Linear issue is still in an active state.
+- This is continuation turn ${turn} of ${maxTurns} for the current agent run.
+- Resume from the current workspace state instead of restarting from scratch.
+- The original task instructions and prior turn context are already present in this thread, so do not restate them before acting.
+- Focus on the remaining ticket work and do not end the turn while the issue stays active unless you are truly blocked.
+`
+
+export class AgentRunner {
+  constructor(
+    private client: OpencodeClient,
+    private config: AgentRunnerConfig,
+  ) {}
+
+  async run(issue: Issue, prompt: string): Promise<AgentRunResult> {
     const log = getLogger()
     let sessionId: string | null = null
     try {
@@ -37,15 +57,49 @@ export class AgentRunner {
         parts: [{ type: 'text', text: prompt }],
       })
       if (result.error) {
-        return { sessionId, success: false, error: 'prompt_failed' }
+        return { sessionId, success: false, error: 'initial_prompt_failed', turnsCompleted: 0 }
       }
 
-      log.info({ issueId: issue.id, sessionId }, 'session_completed')
-      return { sessionId, success: true }
+      let turnsCompleted = 1
+      for (let turn = 2; turn <= this.config.maxTurns; turn++) {
+        const refreshedIssue = await this.refreshIssueState(issue.id)
+        if (!refreshedIssue || !this.isActiveState(refreshedIssue.state)) {
+          log.info({ issueId: issue.id, turnsCompleted: turn - 1 }, 'issue_no_longer_active')
+          break
+        }
+
+        const contResult = await this.client.session.prompt({
+          sessionID: sessionId,
+          parts: [{ type: 'text', text: CONTINUATION_GUIDANCE(turn, this.config.maxTurns) }],
+        })
+        if (contResult.error) {
+          log.warn({ issueId: issue.id, sessionId, turn }, 'continuation_turn_failed')
+          return { sessionId, success: false, error: 'continuation_turn_failed', turnsCompleted }
+        }
+
+        turnsCompleted = turn
+      }
+
+      log.info({ issueId: issue.id, turnsCompleted }, 'agent_run_completed')
+      return { sessionId, success: true, turnsCompleted }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       log.error({ issueId: issue.id, error: message }, 'agent_run_failed')
-      return { sessionId: null, success: false, error: message }
+      return { sessionId: null, success: false, error: message, turnsCompleted: 0 }
     }
+  }
+
+  private async refreshIssueState(issueId: string): Promise<Issue | null> {
+    try {
+      const issues = await this.config.issueStateFetcher([issueId])
+      return issues[0] ?? null
+    } catch {
+      return null
+    }
+  }
+
+  private isActiveState(state: string): boolean {
+    const terminalStates = ['closed', 'cancelled', 'canceled', 'duplicate', 'done']
+    return !terminalStates.includes(state.toLowerCase())
   }
 }
