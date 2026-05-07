@@ -65,7 +65,10 @@ async function main(): Promise<void> {
     log.warn('Proceeding despite health check failure; first session request will confirm connectivity')
   }
 
-  const agentRunner = new AgentRunner(client)
+  const agentRunner = new AgentRunner(client, {
+    maxTurns: config.agent.maxTurns,
+    issueStateFetcher: (ids) => tracker.fetchIssueStatesByIds(ids),
+  })
   const orch = new SymphonyOrchestrator({
     tracker, agentRunner, workspaceManager: wsManager,
     promptTemplate: store.workflow?.promptTemplate,

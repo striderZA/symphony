@@ -19,6 +19,7 @@ export function shouldDispatch(
 ): boolean {
   if (state.running.has(issue.id)) return false
   if (state.claimed.has(issue.id)) return false
+  if (state.completed.has(issue.id)) return false
   if (!activeStates.includes(issue.state)) return false
   if (terminalStates.includes(issue.state)) return false
   if (issue.state.toLowerCase() === 'todo') {
@@ -291,8 +292,6 @@ export class SymphonyOrchestrator {
     this.state.codexTotals.outputTokens += entry.codexOutputTokens
     if (normal) {
       this.state.completed.add(issueId)
-      this.state.retryAttempts.set(issueId, { issueId, identifier: entry.identifier, attempt: 1, dueAtMs: Date.now() + 1000, error: null })
-      this.state.claimed.add(issueId)
     } else {
       const nextAttempt = entry.retryAttempt + 1
       this.state.retryAttempts.set(issueId, { issueId, identifier: entry.identifier, attempt: nextAttempt, dueAtMs: Date.now() + backoffDelay(nextAttempt, this.maxRetryBackoffMs), error: 'worker_exit_abnormal' })

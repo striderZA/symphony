@@ -28,15 +28,20 @@ function mockClient(opts?: {
 }
 
 describe('AgentRunner (SDK v2)', () => {
-  it('creates session and calls prompt', async () => {
+  it('creates session and sends prompt', async () => {
     const client = mockClient()
-    const runner = new AgentRunner(client)
+    const runner = new AgentRunner(client, {
+      maxTurns: 1,
+      issueStateFetcher: async () => [makeIssue({ state: 'Done' })],
+    })
     const result = await runner.run(makeIssue(), 'Work on this')
     expect(result.success).toBe(true)
     expect(result.sessionId).toBe('session-1')
+    expect(result.turnsCompleted).toBe(1)
     expect(client.session.create).toHaveBeenCalledWith(expect.objectContaining({
       title: 'TICKET-1: Test',
     }))
+    expect(client.session.prompt).toHaveBeenCalledTimes(1)
     expect(client.session.prompt).toHaveBeenCalledWith(
       expect.objectContaining({ sessionID: 'session-1' })
     )
@@ -44,18 +49,25 @@ describe('AgentRunner (SDK v2)', () => {
 
   it('handles createSession failure', async () => {
     const client = mockClient({ createFail: true })
-    const runner = new AgentRunner(client)
+    const runner = new AgentRunner(client, {
+      maxTurns: 1,
+      issueStateFetcher: async () => [],
+    })
     const result = await runner.run(makeIssue(), 'Work')
     expect(result.success).toBe(false)
     expect(result.error).toContain('create failed')
+    expect(result.turnsCompleted).toBe(0)
   })
 
-  it('handles prompt API error', async () => {
+  it('handles initial prompt API error', async () => {
     const client = mockClient({ promptFail: true })
-    const runner = new AgentRunner(client)
+    const runner = new AgentRunner(client, {
+      maxTurns: 1,
+      issueStateFetcher: async () => [],
+    })
     const result = await runner.run(makeIssue(), 'Work')
     expect(result.success).toBe(false)
-    expect(result.error).toContain('prompt failed')
+    expect(result.error).toContain('initial_prompt_failed')
   })
 
   it('handles prompt network error', async () => {
@@ -65,7 +77,10 @@ describe('AgentRunner (SDK v2)', () => {
         prompt: vi.fn().mockRejectedValue(new Error('network error')),
       },
     } as any
-    const runner = new AgentRunner(client)
+    const runner = new AgentRunner(client, {
+      maxTurns: 1,
+      issueStateFetcher: async () => [],
+    })
     const result = await runner.run(makeIssue(), 'Work')
     expect(result.success).toBe(false)
     expect(result.error).toContain('network error')
@@ -73,7 +88,10 @@ describe('AgentRunner (SDK v2)', () => {
 
   it('includes permissions in session create', async () => {
     const client = mockClient()
-    const runner = new AgentRunner(client)
+    const runner = new AgentRunner(client, {
+      maxTurns: 1,
+      issueStateFetcher: async () => [makeIssue({ state: 'Done' })],
+    })
     await runner.run(makeIssue(), 'do work')
     expect(client.session.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -85,5 +103,55 @@ describe('AgentRunner (SDK v2)', () => {
         ]),
       })
     )
+  })
+})
+
+describe('AgentRunner continuation turns', () => {
+  it('loops through multiple turns when issue stays active', async () => {
+    let fetcherCalls = 0
+    const client = mockClient()
+    const runner = new AgentRunner(client, {
+      maxTurns: 3,
+      issueStateFetcher: async () => {
+        fetcherCalls++
+        return [makeIssue()] // always active (In Progress)
+      },
+    })
+    const result = await runner.run(makeIssue(), 'do work')
+    expect(result.success).toBe(true)
+    expect(result.turnsCompleted).toBe(3)
+    expect(client.session.prompt).toHaveBeenCalledTimes(3)
+  })
+
+  it('stops when issue state is no longer active', async () => {
+    let fetcherCalls = 0
+    const client = mockClient()
+    const runner = new AgentRunner(client, {
+      maxTurns: 10,
+      issueStateFetcher: async () => {
+        fetcherCalls++
+        if (fetcherCalls >= 2) return [makeIssue({ state: 'Done' })]
+        return [makeIssue()]
+      },
+    })
+    const result = await runner.run(makeIssue(), 'do work')
+    expect(result.success).toBe(true)
+    expect(result.turnsCompleted).toBe(2)
+    expect(client.session.prompt).toHaveBeenCalledTimes(2)
+  })
+
+  it('uses continuation guidance for subsequent turns', async () => {
+    const client = mockClient()
+    const runner = new AgentRunner(client, {
+      maxTurns: 2,
+      issueStateFetcher: async () => [makeIssue()],
+    })
+    await runner.run(makeIssue(), 'do work')
+    expect(client.session.prompt).toHaveBeenCalledTimes(2)
+    // Second call should use continuation guidance, not the full prompt
+    const firstCall = client.session.prompt.mock.calls[0][0]
+    const secondCall = client.session.prompt.mock.calls[1][0]
+    expect(firstCall.parts[0].text).toContain('do work')
+    expect(secondCall.parts[0].text).toContain('Continuation guidance')
   })
 })
