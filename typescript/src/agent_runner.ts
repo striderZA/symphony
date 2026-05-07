@@ -40,103 +40,23 @@ export class AgentRunner {
       log.info({ issueId: issue.id, sessionId }, 'session_created')
       this.onSessionCreated?.(sessionId)
 
-      await this.client.session.promptAsync({
+      const result = await this.client.session.prompt({
         sessionID: sessionId,
         parts: [{ type: 'text', text: prompt }],
       })
-      log.info({ issueId: issue.id, sessionId }, 'prompt_sent')
-
-      const result = await detectSessionResult(this.client, sessionId, issue.id, log)
 
       if (result.error) {
-        log.warn({ issueId: issue.id, sessionId, error: result.error }, 'session_error')
-        return { sessionId, success: false, error: result.error }
+        const errMsg = typeof result.error === 'string' ? result.error : 'prompt_error'
+        log.warn({ issueId: issue.id, sessionId, error: errMsg }, 'session_error')
+        return { sessionId, success: false, error: errMsg }
       }
 
-      log.info({ issueId: issue.id, sessionId }, 'session_idle')
+      log.info({ issueId: issue.id, sessionId }, 'prompt_completed')
       return { sessionId, success: true }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       log.error({ issueId: issue.id, error: message }, 'agent_run_failed')
       return { sessionId: null, success: false, error: message }
     }
-  }
-}
-
-async function detectSessionResult(
-  client: OpencodeClient,
-  sessionID: string,
-  issueID: string,
-  log: ReturnType<typeof getLogger>,
-): Promise<{ error?: string }> {
-  const abort = new AbortController()
-
-  try {
-    const sse = await client.event.subscribe(undefined, {
-      signal: abort.signal,
-    })
-
-    const safetyTimer = setInterval(async () => {
-      try {
-        const statuses = await client.session.status()
-        const s = statuses.data?.[sessionID]
-        if (s?.type === 'idle' || s?.type === 'retry') {
-          abort.abort()
-        }
-      } catch { /* safety poll failure is non-fatal */ }
-    }, 30_000)
-
-    try {
-      for await (const event of sse.stream) {
-        if (event.type === 'session.idle') {
-          const props = (event as any).properties
-          if (props?.sessionID === sessionID) {
-            abort.abort()
-            log.info({ issueID, sessionID }, 'session_idle_event')
-            return {}
-          }
-        }
-        if (event.type === 'session.error') {
-          const props = (event as any).properties
-          if (props?.sessionID === sessionID) {
-            abort.abort()
-            const errMsg = props?.error?.message ?? 'session_error'
-            log.warn({ issueID, sessionID, error: errMsg }, 'session_error_event')
-            return { error: errMsg }
-          }
-        }
-        if (event.type === 'permission.asked') {
-          const props = (event as any).properties
-          if (props?.sessionID === sessionID && props?.id) {
-            client.permission.reply({
-              requestID: props.id,
-              reply: 'always',
-            }).catch(() => {})
-            log.info({ issueID, sessionID, permId: props.id }, 'permission_auto_approved')
-          }
-        }
-      }
-    } finally {
-      clearInterval(safetyTimer)
-    }
-
-    // SSE stream ended — fall back to explicit status check
-    const statuses = await client.session.status()
-    const s = statuses.data?.[sessionID]
-    if (s?.type === 'idle') return {}
-    if (s?.type === 'retry') return { error: s.message || 'session_retry' }
-    return { error: 'stream_ended' }
-  } catch (err: unknown) {
-    if ((err as any)?.name === 'AbortError') {
-      // Abort triggered by idle/error event or safety poll — check status
-      try {
-        const statuses = await client.session.status()
-        const s = statuses.data?.[sessionID]
-        if (s?.type === 'idle') return {}
-        if (s?.type === 'retry') return { error: s.message || 'session_retry' }
-      } catch { /* status check failed after abort — assume clean exit */ }
-      return {}
-    }
-    return { error: err instanceof Error ? err.message : String(err) }
   }
 }
