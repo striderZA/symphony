@@ -4,6 +4,7 @@ node_modules/
 # Python build artifacts
 *.egg-info/
 __pycache__/
+.pytest_cache/
 nul
 
 # Editor / OS
