@@ -27,7 +27,6 @@ agent:
   max_turns: 20
 opencode:
   server_url: http://localhost:4096
-  server_start_command: opencode app-server --port 4096
   stall_timeout_ms: 300000
   session_timeout_ms: 3600000
 server:

@@ -51,24 +51,18 @@ async function main(): Promise<void> {
 
   if (config.opencode.serverStartCommand) {
     const { spawn } = await import('node:child_process')
-    const child = spawn(config.opencode.serverStartCommand, {
-      stdio: 'inherit', shell: true, cwd: process.cwd(),
-      detached: true, windowsHide: true,
-    })
+    const child = spawn(config.opencode.serverStartCommand, { stdio: 'inherit', shell: true, cwd: process.cwd(), detached: true })
     child.unref()
+    await new Promise((r) => setTimeout(r, 2000))
+  }
 
-    for (let attempt = 0; attempt < 10; attempt++) {
-      await new Promise((r) => setTimeout(r, 2000))
-      try {
-        const health = await fetch(`${config.opencode.serverUrl}/global/health`, { signal: AbortSignal.timeout(3000) })
-        if (health.ok) {
-          log.info({ serverUrl: config.opencode.serverUrl }, 'opencode_server_connected')
-          break
-        }
-      } catch {
-        log.info({ attempt: attempt + 1 }, 'opencode_server_not_ready')
-      }
-    }
+  try {
+    const health = await fetch(`${config.opencode.serverUrl}/global/health`, { signal: AbortSignal.timeout(5000) })
+    if (!health.ok) throw new Error(`Health check returned ${health.status}`)
+    log.info({ serverUrl: config.opencode.serverUrl }, 'opencode_server_connected')
+  } catch (err) {
+    log.warn({ error: String(err), serverUrl: config.opencode.serverUrl }, 'opencode_health_check_failed')
+    log.warn('Proceeding despite health check failure; first session request will confirm connectivity')
   }
 
   const agentRunner = new AgentRunner(client)
