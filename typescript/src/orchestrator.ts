@@ -193,6 +193,7 @@ export class SymphonyOrchestrator {
       }
     })()
     this.state.running.set(issue.id, {
+      session: null,
       issueId: issue.id, identifier: issue.identifier, issue,
       sessionId: null, lastCodexEvent: null, lastCodexTimestamp: null, lastCodexMessage: '',
       codexInputTokens: 0, codexOutputTokens: 0, codexTotalTokens: 0,

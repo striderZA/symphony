@@ -1,3 +1,5 @@
+import type { CodexEventType } from './events'
+
 export interface BlockerRef {
   id: string | null
   identifier: string | null
@@ -30,6 +32,23 @@ export interface Workspace {
   createdNow: boolean
 }
 
+export interface LiveSession {
+  sessionId: string
+  threadId: string
+  turnId: string
+  codexAppServerPid: string | null
+  lastCodexEvent: CodexEventType | null
+  lastCodexTimestamp: Date | null
+  lastCodexMessage: string
+  codexInputTokens: number
+  codexOutputTokens: number
+  codexTotalTokens: number
+  lastReportedInputTokens: number
+  lastReportedOutputTokens: number
+  lastReportedTotalTokens: number
+  turnCount: number
+}
+
 export interface RetryEntry {
   issueId: string
   identifier: string
@@ -39,6 +58,7 @@ export interface RetryEntry {
 }
 
 export interface RunningEntry {
+  session: LiveSession | null
   issueId: string
   identifier: string
   issue: Issue
