@@ -253,6 +253,14 @@ export class SymphonyOrchestrator {
     const abortController = new AbortController()
     const task = (async () => {
       try {
+        if (issue.state === 'Todo') {
+          try {
+            await this.tracker.updateIssueState(issue.id, 'In Progress')
+            getLogger().info({ issueId: issue.id, identifier: issue.identifier }, 'state_transitioned_to_in_progress')
+          } catch (stateErr) {
+            getLogger().warn({ issueId: issue.id, identifier: issue.identifier, error: String(stateErr) }, 'state_transition_failed')
+          }
+        }
         const ws = this.workspaceManager?.createForIssue(issue.identifier)
         if (ws && this.workspaceManager) {
           await this.workspaceManager.runAfterCreate(ws)

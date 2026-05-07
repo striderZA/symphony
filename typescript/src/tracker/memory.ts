@@ -27,4 +27,10 @@ export class MemoryTracker implements TrackerAdapter {
       .map((id) => this.issues.get(id))
       .filter((i): i is Issue => i !== undefined)
   }
+
+  async updateIssueState(issueId: string, stateName: string): Promise<void> {
+    const issue = this.issues.get(issueId)
+    if (!issue) throw new Error(`Issue ${issueId} not found`)
+    this.issues.set(issueId, { ...issue, state: stateName })
+  }
 }

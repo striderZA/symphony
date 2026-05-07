@@ -102,6 +102,26 @@ export class LinearTracker implements TrackerAdapter {
     return (data?.issues?.nodes ?? []).map(normalizeIssue)
   }
 
+  async updateIssueState(issueId: string, stateName: string): Promise<void> {
+    const stateQuery = `query IssueTeamStates($id: ID!) {
+      issue(id: $id) {
+        team { id states { nodes { id name } } }
+      }
+    }`
+    const stateData = await this.graphql<{ issue: { team: { id: string; states: { nodes: Array<{ id: string; name: string }> } } } }>(stateQuery, { id: issueId })
+    const team = stateData?.issue?.team
+    if (!team) throw new Error(`Cannot find team for issue ${issueId}`)
+
+    const state = team.states.nodes.find((s) => s.name.toLowerCase() === stateName.toLowerCase())
+    if (!state) throw new Error(`State "${stateName}" not found in team ${team.id}`)
+
+    const mutation = `mutation UpdateState($id: ID!, $stateId: String!) {
+      issueUpdate(id: $id, input: { stateId: $stateId }) { success }
+    }`
+    const result = await this.graphql<{ issueUpdate: { success: boolean } }>(mutation, { id: issueId, stateId: state.id })
+    if (!result?.issueUpdate?.success) throw new Error(`Failed to update issue ${issueId} to state ${stateName}`)
+  }
+
   private async graphql<T>(query: string, variables: Record<string, unknown>): Promise<T | null> {
     const response = await fetch(this.config.endpoint, {
       method: 'POST',
