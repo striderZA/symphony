@@ -300,6 +300,12 @@ export class SymphonyOrchestrator {
     this.state.codexTotals.outputTokens += entry.codexOutputTokens
     if (normal) {
       this.state.completed.add(issueId)
+      try {
+        this.tracker.updateIssueState(issueId, 'In Review')
+        getLogger().info({ issueId, identifier: entry?.identifier }, 'state_transitioned_to_in_review')
+      } catch (stateErr) {
+        getLogger().warn({ issueId, error: String(stateErr) }, 'state_transition_to_review_failed')
+      }
     } else {
       const nextAttempt = entry.retryAttempt + 1
       this.state.retryAttempts.set(issueId, { issueId, identifier: entry.identifier, attempt: nextAttempt, dueAtMs: Date.now() + backoffDelay(nextAttempt, this.maxRetryBackoffMs), error: 'worker_exit_abnormal' })
