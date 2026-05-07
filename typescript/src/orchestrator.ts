@@ -106,6 +106,21 @@ export class SymphonyOrchestrator {
 
   stop(): void { this.running = false }
 
+  stopIssue(issueId: string): boolean {
+    const entry = this.state.running.get(issueId)
+    if (!entry) return false
+    if (entry.cancel) entry.cancel()
+    this.state.running.delete(issueId)
+    this.state.claimed.delete(issueId)
+    if (entry.startedAt) this.state.codexTotals.secondsRunning += (Date.now() - entry.startedAt.getTime()) / 1000
+    this.state.codexTotals.totalTokens += entry.codexTotalTokens
+    this.state.codexTotals.inputTokens += entry.codexInputTokens
+    this.state.codexTotals.outputTokens += entry.codexOutputTokens
+    getLogger().info({ issueId, identifier: entry.identifier }, 'issue_stopped_by_user')
+    this.notifyObservers()
+    return true
+  }
+
   private async tick(): Promise<void> {
     this.state = await this.reconcileRunning()
     let issues: Issue[] = []
