@@ -7,6 +7,7 @@ export interface SessionStatus {
 export interface OpenCodeClient {
   createSession(title: string): Promise<string>
   sendMessage(sessionId: string, prompt: string): Promise<void>
+  startTurn(sessionId: string): Promise<{ threadId: string; turnId: string }>
   getSessionStatus(sessionId: string): Promise<SessionStatus>
   deleteSession(sessionId: string): Promise<void>
 }
@@ -34,6 +35,15 @@ export class HttpOpenCodeClient implements OpenCodeClient {
       body: JSON.stringify({ parts: [{ type: 'text', text: prompt }] }),
     })
     if (!res.ok) throw new Error(`Failed to send message: ${res.status}`)
+  }
+
+  async startTurn(sessionId: string): Promise<{ threadId: string; turnId: string }> {
+    const res = await fetch(`${this.baseUrl}/session/${sessionId}/turn`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    })
+    if (!res.ok) throw new Error(`Failed to start turn: ${res.status}`)
+    return await res.json() as { threadId: string; turnId: string }
   }
 
   async getSessionStatus(sessionId: string): Promise<SessionStatus> {

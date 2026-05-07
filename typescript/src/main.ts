@@ -59,7 +59,10 @@ async function main(): Promise<void> {
     process.exit(1)
   }
 
-  const agentRunner = new AgentRunner(opencodeClient)
+  const agentRunner = new AgentRunner(opencodeClient, {
+    maxTurns: config.agent.maxTurns,
+    issueStateFetcher: (ids) => tracker.fetchIssueStatesByIds(ids),
+  })
   const orch = new SymphonyOrchestrator({
     tracker, agentRunner, workspaceManager: wsManager,
     maxConcurrent: config.agent.maxConcurrentAgents, pollIntervalMs: config.polling.intervalMs,
