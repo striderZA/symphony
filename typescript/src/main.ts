@@ -79,16 +79,21 @@ async function main(): Promise<void> {
   })
 
   const serverPort = args.port ?? (config as any).server?.port
+  let server: { stop: () => void } | null = null
   if (serverPort && serverPort > 0) {
     const { startServer } = await import('./server/index')
-    startServer(
+    server = startServer(
       { port: serverPort, host: (config as any).server?.host ?? '127.0.0.1' },
       () => orch.state,
     )
   }
 
   orch.addObserver((state) => logSnapshot(state))
-  const shutdown = () => { log.info('shutdown_requested'); orch.stop() }
+  const shutdown = () => {
+    log.info('shutdown_requested')
+    orch.stop()
+    if (server) server.stop()
+  }
   process.on('SIGINT', shutdown)
   process.on('SIGTERM', shutdown)
 
