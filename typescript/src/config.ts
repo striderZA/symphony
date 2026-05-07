@@ -56,7 +56,7 @@ const AgentRawSchema = z.object({
 const OpenCodeRawSchema = z.object({
   server_url: z.string().default('http://localhost:4096'),
   server_start_command: z.string().nullable().default(null),
-  stall_timeout_ms: z.number().int().positive().default(300000),
+  stall_timeout_ms: z.number().int().default(300000),
   session_timeout_ms: z.number().int().positive().default(3600000),
 })
 
@@ -218,8 +218,10 @@ export function buildServiceConfig(wf: WorkflowDefinition, workflowDir?: string,
   }
 }
 
-export function parseAndValidateConfig(wf: WorkflowDefinition, workflowDir?: string, envOverrides?: Record<string, string | undefined>): ServiceConfig {
-  return buildServiceConfig(wf, workflowDir, envOverrides)
+export function parseAndValidateConfig(wf: WorkflowDefinition, workflowDir?: string, envOverrides?: Record<string, string | undefined>): { config: ServiceConfig; errors: string[] } {
+  const config = buildServiceConfig(wf, workflowDir, envOverrides)
+  const errors = validateDispatchConfig(config)
+  return { config, errors }
 }
 
 export function validateDispatchConfig(cfg: ServiceConfig): string[] {
