@@ -1,0 +1,13 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "linear_graphql": {
+      "type": "local",
+      "command": ["bun", ".opencode/mcp/linear_graphql.mjs"],
+      "enabled": true,
+      "env": {
+        "LINEAR_API_KEY": "$LINEAR_API_KEY"
+      }
+    }
+  }
+}

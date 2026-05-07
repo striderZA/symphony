@@ -72,7 +72,9 @@ Work only in the provided repository copy. Do not touch any other path.
 
 ## Prerequisite: `linear_graphql` tool is available
 
-The `linear_graphql` tool is injected by the Symphony orchestrator and allows reading, updating, and commenting on Linear issues. If it is missing, stop and report the issue.
+A `linear_graphql` tool is available via MCP, registered in the project's `opencode.json`.
+It allows reading, updating, and commenting on Linear issues by executing raw GraphQL
+queries/mutations with the configured API key.
 
 ## Default posture
 
