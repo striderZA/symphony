@@ -51,20 +51,35 @@ export class LinearTracker implements TrackerAdapter {
   constructor(private config: LinearConfig) {}
 
   async fetchCandidateIssues(): Promise<Issue[]> {
-    const query = `query Candidates($projectSlug: String!, $activeStates: [String!]!) {
-      issues(filter: { project: { slugId: { eq: $projectSlug } }, state: { name: { in: $activeStates } } }, first: 50) {
-        nodes { id identifier title description priority branchName url
-          labels { nodes { name } }
-          state { name }
-          createdAt updatedAt
-          children { nodes { id identifier state { name } } } }
-      }
-    }`
-    const data = await this.graphql<{ issues: { nodes: LinearIssueNode[] } }>(query, {
-      projectSlug: this.config.projectSlug,
-      activeStates: this.config.activeStates,
-    })
-    return (data?.issues?.nodes ?? []).map(normalizeIssue)
+    const allNodes: LinearIssueNode[] = []
+    let cursor: string | null = null
+    const pageSize = 50
+
+    while (true) {
+      const query = `query Candidates($projectSlug: String!, $activeStates: [String!]!, $after: String, $first: Int!) {
+        issues(filter: { project: { slugId: { eq: $projectSlug } }, state: { name: { in: $activeStates } } }, first: $first, after: $after) {
+          nodes { id identifier title description priority branchName url
+            labels { nodes { name } }
+            state { name }
+            createdAt updatedAt
+            children { nodes { id identifier state { name } } } }
+          pageInfo { hasNextPage endCursor }
+        }
+      }`
+      const data = await this.graphql<{ issues: { nodes: LinearIssueNode[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } }>(query, {
+        projectSlug: this.config.projectSlug,
+        activeStates: this.config.activeStates,
+        after: cursor,
+        first: pageSize,
+      })
+      if (!data?.issues) break
+      allNodes.push(...data.issues.nodes)
+      if (!data.issues.pageInfo.hasNextPage) break
+      cursor = data.issues.pageInfo.endCursor
+      if (!cursor) break
+    }
+
+    return allNodes.map(normalizeIssue)
   }
 
   async fetchIssuesByStates(stateNames: string[]): Promise<Issue[]> {
