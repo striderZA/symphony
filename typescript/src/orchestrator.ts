@@ -133,6 +133,41 @@ export class SymphonyOrchestrator {
 
   private async reconcileRunning(): Promise<OrchestratorState> {
     this.state = this.reconcileStalledRuns()
+    this.state = await this.reconcileTrackerStates()
+    return this.state
+  }
+
+  async reconcileTrackerStates(): Promise<OrchestratorState> {
+    const runningIds = Array.from(this.state.running.keys())
+    if (runningIds.length === 0) return this.state
+
+    try {
+      const currentIssues = await this.tracker.fetchIssueStatesByIds(runningIds)
+      const currentMap = new Map(currentIssues.map((i) => [i.id, i]))
+
+      for (const [issueId, entry] of this.state.running) {
+        const current = currentMap.get(issueId)
+        if (!current) continue
+
+        const currentState = current.state
+        if (this.terminalStates.includes(currentState)) {
+          getLogger().warn({ issueId, identifier: entry.identifier, state: currentState }, 'terminating_terminal_issue')
+          if (entry.cancel) entry.cancel()
+          this.state = this.terminateRunningIssue(issueId, true)
+          this.state.completed.add(issueId)
+        } else if (!this.activeStates.includes(currentState)) {
+          getLogger().warn({ issueId, identifier: entry.identifier, state: currentState }, 'terminating_non_active_issue')
+          if (entry.cancel) entry.cancel()
+          this.state = this.terminateRunningIssue(issueId, false)
+        } else {
+          const updatedEntry = { ...entry, issue: current }
+          this.state.running.set(issueId, updatedEntry as any)
+        }
+      }
+    } catch (err) {
+      getLogger().error({ error: String(err) }, 'state_reconciliation_failed')
+    }
+
     return this.state
   }
 
