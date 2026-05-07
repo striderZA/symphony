@@ -5,12 +5,14 @@ let logger: pino.Logger = pino({
 })
 
 export function configureLogging(options?: { level?: string; path?: string }): void {
-  logger = pino({
-    level: options?.level || process.env.SYMPHONY_LOG_LEVEL || 'info',
-    transport: options?.path
-      ? { target: 'pino/file', options: { destination: options.path } }
-      : undefined,
-  })
+  logger = pino(
+    {
+      level: options?.level || process.env.SYMPHONY_LOG_LEVEL || 'info',
+    },
+    options?.path
+      ? pino.destination(options.path)
+      : process.stderr,
+  )
 }
 
 export function getLogger(): pino.Logger {
