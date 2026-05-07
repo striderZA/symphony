@@ -66,6 +66,20 @@ describe('validateDispatchConfig', () => {
     const errors = validateDispatchConfig(cfg)
     expect(errors).toContain('tracker.kind is required')
   })
+
+  it('returns error for unsupported tracker kind', () => {
+    const wf: WorkflowDefinition = { config: { tracker: { kind: 'jira' } }, promptTemplate: '' }
+    const cfg = buildServiceConfig(wf)
+    const errors = validateDispatchConfig(cfg)
+    expect(errors).toContain('unsupported tracker.kind: jira')
+  })
+
+  it('returns error for missing projectSlug when kind is linear', () => {
+    const wf: WorkflowDefinition = { config: { tracker: { kind: 'linear', api_key: 'key' } }, promptTemplate: '' }
+    const cfg = buildServiceConfig(wf)
+    const errors = validateDispatchConfig(cfg)
+    expect(errors).toContain('tracker.project_slug is required for linear tracker')
+  })
 })
 
 describe('codex and server schema', () => {

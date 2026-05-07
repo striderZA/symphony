@@ -59,6 +59,33 @@ describe('backoffDelay', () => {
     expect(backoffDelay(2)).toBe(20000)
     expect(backoffDelay(3)).toBe(40000)
   })
+  it('treats attempt 0 as attempt 1', () => {
+    expect(backoffDelay(0)).toBe(10000)
+  })
+})
+
+describe('startupCleanup', () => {
+  it('calls workspaceManager.removeForIssue for terminal issues', async () => {
+    const tracker = {
+      fetchCandidateIssues: vi.fn().mockResolvedValue([]),
+      fetchIssuesByStates: vi.fn().mockResolvedValue([
+        makeIssue({ id: 'done-1', identifier: 'TICKET-1', state: 'Done' }),
+      ]),
+      fetchIssueStatesByIds: vi.fn().mockResolvedValue([]),
+    }
+    const agentRunner = { run: vi.fn() }
+    const workspaceManager = { removeForIssue: vi.fn(), createForIssue: vi.fn(), runBeforeRun: vi.fn(), runAfterRun: vi.fn() }
+    const orch = new SymphonyOrchestrator({
+      tracker: tracker as any,
+      agentRunner: agentRunner as any,
+      workspaceManager: workspaceManager as any,
+    })
+
+    await (orch as any).startupCleanup()
+
+    expect(workspaceManager.removeForIssue).toHaveBeenCalledWith('TICKET-1')
+    expect(tracker.fetchIssuesByStates).toHaveBeenCalled()
+  })
 })
 
 describe('orchestrator reconciliation Part B', () => {

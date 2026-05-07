@@ -1,8 +1,13 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mkdirSync, existsSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { WorkspaceManager } from '../src/workspace'
+import { execHook } from '../src/hooks'
+
+vi.mock('../src/hooks', () => ({
+  execHook: vi.fn().mockResolvedValue({ success: true, stdout: '', stderr: '', error: null }),
+}))
 
 let testRoot: string
 
@@ -37,5 +42,18 @@ describe('WorkspaceManager', () => {
     const wm = new WorkspaceManager({ root: testRoot })
     const ws = wm.createForIssue('MT-649: fix bug')
     expect(ws.workspaceKey).toBe('MT-649__fix_bug')
+  })
+
+  it('fires after_create hook for new workspace', () => {
+    const wm = new WorkspaceManager({ root: testRoot, afterCreate: 'mock-cmd' })
+    const ws = wm.createForIssue('AFTER-1')
+    expect(ws.createdNow).toBe(true)
+    expect(execHook).toHaveBeenCalledWith('mock-cmd', ws.path, 60000)
+  })
+
+  it('does not throw when after_create hook fails', () => {
+    vi.mocked(execHook).mockRejectedValueOnce(new Error('hook failed'))
+    const wm = new WorkspaceManager({ root: testRoot, afterCreate: 'fail-cmd' })
+    expect(() => wm.createForIssue('AFTER-2')).not.toThrow()
   })
 })
