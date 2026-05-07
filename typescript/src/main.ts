@@ -12,6 +12,16 @@ import { parseCliArgs, guardrailsBanner, usageMessage } from './cli'
 async function main(): Promise<void> {
   const args = parseCliArgs(process.argv.slice(2))
 
+  if (args.command === 'start') {
+    await startOrchestrator(args)
+  } else if (args.command === 'status') {
+    await showStatus(args)
+  } else if (args.command === 'stop') {
+    await stopIssue(args)
+  }
+}
+
+async function startOrchestrator(args: import('./cli').CliArgs): Promise<void> {
   if (!args.acknowledged) {
     console.error(guardrailsBanner())
     process.exit(1)
@@ -53,7 +63,6 @@ async function main(): Promise<void> {
     const { spawn } = await import('node:child_process')
     const child = spawn(config.opencode.serverStartCommand, { stdio: 'inherit', shell: true, cwd: process.cwd(), detached: true })
     child.unref()
-    // Give it a moment to start
     await new Promise((r) => setTimeout(r, 2000))
   }
 
@@ -85,13 +94,18 @@ async function main(): Promise<void> {
     server = startServer(
       { port: serverPort, host: (config as any).server?.host ?? '127.0.0.1' },
       () => orch.state,
+      (issueId) => orch.stopIssue(issueId),
     )
   }
+
+  const { startTerminalDashboard } = await import('./dashboard_terminal')
+  const dashboard = startTerminalDashboard(() => orch.state)
 
   orch.addObserver((state) => logSnapshot(state))
   const shutdown = () => {
     log.info('shutdown_requested')
     orch.stop()
+    dashboard.stop()
     if (server) server.stop()
   }
   process.on('SIGINT', shutdown)
@@ -100,6 +114,42 @@ async function main(): Promise<void> {
   log.info('symphony_started')
   await orch.run()
   log.info('symphony_stopped')
+}
+
+async function getServerUrl(args: import('./cli').CliArgs): Promise<string> {
+  const port = args.port ?? 8080
+  return `http://127.0.0.1:${port}`
+}
+
+async function showStatus(args: import('./cli').CliArgs): Promise<void> {
+  const base = await getServerUrl(args)
+  const res = await fetch(`${base}/api/v1/state`)
+  if (!res.ok) {
+    console.error(`Failed to get status: ${res.status}. Is the server running on port ${args.port ?? 8080}?`)
+    process.exit(1)
+  }
+  const data = await res.json()
+  console.log(JSON.stringify(data, null, 2))
+}
+
+async function stopIssue(args: import('./cli').CliArgs): Promise<void> {
+  if (!args.stopIssueId) {
+    console.error('Usage: symphony stop <issue-id>')
+    process.exit(1)
+  }
+  const base = await getServerUrl(args)
+  const res = await fetch(`${base}/api/v1/issue/${args.stopIssueId}/stop`, { method: 'POST' })
+  if (!res.ok) {
+    const text = await res.text()
+    console.error(`Failed to stop issue: ${res.status} ${text}`)
+    process.exit(1)
+  }
+  const data = await res.json()
+  if (data.stopped) {
+    console.log(`Stopped issue ${args.stopIssueId}`)
+  } else {
+    console.log(`Issue ${args.stopIssueId} not found`)
+  }
 }
 
 main().catch((err) => { console.error('Fatal:', err); process.exit(1) })
