@@ -1,18 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { AgentRunner } from '../src/agent_runner'
-import type { OpenCodeClient, SessionStatus } from '../src/opencode_client'
 import type { Issue } from '../src/models'
-
-function makeClient(overrides?: Partial<OpenCodeClient>): OpenCodeClient {
-  return {
-    createSession: vi.fn().mockResolvedValue('session-1'),
-    sendMessage: vi.fn().mockResolvedValue(undefined),
-    getSessionStatus: vi.fn().mockResolvedValue({ id: 'session-1', status: 'completed' } as SessionStatus),
-    deleteSession: vi.fn(),
-    startTurn: vi.fn().mockResolvedValue({ threadId: 't1', turnId: 'turn-1' }),
-    ...overrides,
-  }
-}
 
 function makeIssue(overrides?: Partial<Issue>): Issue {
   return {
@@ -23,85 +11,122 @@ function makeIssue(overrides?: Partial<Issue>): Issue {
   } as Issue
 }
 
-describe('AgentRunner', () => {
-  it('creates session and sends prompt', async () => {
-    const client = makeClient()
-    const runner = new AgentRunner(client, {
-      maxTurns: 1,
-      issueStateFetcher: async () => [makeIssue({ state: 'Done' })],
-    })
+/**
+ * Create a mock OpencodeClient.
+ *
+ * By default the SSE stream yields a `session.idle` event immediately,
+ * causing detectSessionResult to resolve without waiting for the 30s
+ * safety poll timer.
+ */
+function mockClient(opts?: {
+  createFail?: boolean
+  promptFail?: boolean
+  streamItems?: Array<{ type: string; properties: Record<string, unknown> }>
+}) {
+  const stream = (async function* () {
+    const items = opts?.streamItems ?? [
+      { type: 'session.idle', properties: { sessionID: 'session-1' } },
+    ]
+    for (const item of items) {
+      yield item as any
+    }
+    // Keep stream alive (resolves immediately after yielding all items)
+    await new Promise(() => {})
+  })()
+
+  return {
+    session: {
+      create: opts?.createFail
+        ? vi.fn().mockRejectedValue(new Error('create failed'))
+        : vi.fn().mockResolvedValue({ data: { id: 'session-1' } }),
+      promptAsync: opts?.promptFail
+        ? vi.fn().mockRejectedValue(new Error('prompt failed'))
+        : vi.fn().mockResolvedValue({ data: {} }),
+      status: vi.fn().mockResolvedValue({
+        data: { 'session-1': { type: 'idle' as const } },
+      }),
+      delete: vi.fn().mockResolvedValue({ data: {} }),
+    },
+    event: {
+      subscribe: vi.fn().mockResolvedValue({ stream }),
+    },
+    permission: {
+      reply: vi.fn().mockResolvedValue({ data: {} }),
+    },
+  } as any
+}
+
+describe('AgentRunner (SDK v2)', () => {
+  it('creates session and sends prompt, detects idle from SSE', async () => {
+    const client = mockClient()
+    const runner = new AgentRunner(client)
     const issue = makeIssue({ id: 'abc', identifier: 'MT-1', title: 'Test', state: 'Todo' })
     const result = await runner.run(issue, 'Work on this')
     expect(result.success).toBe(true)
     expect(result.sessionId).toBe('session-1')
-    expect(client.createSession).toHaveBeenCalledWith('MT-1: Test')
+    expect(client.session.create).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'MT-1: Test',
+    }))
+    expect(client.session.promptAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionID: 'session-1' })
+    )
   })
 
-  it('handles send failure', async () => {
-    const client = makeClient({
-      sendMessage: vi.fn().mockRejectedValue(new Error('Send failed')),
-    })
-    const runner = new AgentRunner(client, {
-      maxTurns: 1,
-      issueStateFetcher: async () => [makeIssue({ state: 'Done' })],
-    })
-    const issue = makeIssue({ id: 'abc', identifier: 'MT-1', title: 'Test', state: 'Todo' })
-    const result = await runner.run(issue, 'Work')
+  it('handles createSession failure', async () => {
+    const client = mockClient({ createFail: true })
+    const runner = new AgentRunner(client)
+    const result = await runner.run(makeIssue(), 'Work')
     expect(result.success).toBe(false)
-    expect(result.error).toContain('Send failed')
+    expect(result.error).toContain('create failed')
   })
 
-  it('handles client errors', async () => {
-    const client = makeClient({
-      createSession: vi.fn().mockRejectedValue(new Error('Connection refused')),
-    })
-    const runner = new AgentRunner(client, {
-      maxTurns: 1,
-      issueStateFetcher: async () => [makeIssue({ state: 'Done' })],
-    })
-    const issue = makeIssue({ id: 'abc', identifier: 'MT-1', title: 'Test', state: 'Todo' })
-    const result = await runner.run(issue, 'Work')
+  it('handles promptAsync failure', async () => {
+    const client = mockClient({ promptFail: true })
+    const runner = new AgentRunner(client)
+    const result = await runner.run(makeIssue(), 'Work')
     expect(result.success).toBe(false)
-    expect(result.error).toContain('Connection refused')
-  })
-})
-
-describe('AgentRunner continuation turns', () => {
-  it('loops through multiple turns when issue stays active', async () => {
-    let turnCount = 0
-    const client: OpenCodeClient = {
-      createSession: vi.fn().mockResolvedValue('session-1'),
-      sendMessage: vi.fn().mockResolvedValue(undefined),
-      getSessionStatus: vi.fn().mockImplementation(async () => {
-        turnCount++
-        return { id: 'session-1', status: 'completed' } as SessionStatus
-      }),
-      deleteSession: vi.fn(),
-      startTurn: vi.fn().mockResolvedValue({ threadId: 't1', turnId: 'turn-1' }),
-    }
-    const runner = new AgentRunner(client, {
-      maxTurns: 3,
-      issueStateFetcher: async () => [makeIssue()],
-    })
-    const result = await runner.run(makeIssue(), 'do work')
-    expect(result.success).toBe(true)
-    expect(client.sendMessage).toHaveBeenCalledTimes(3)
+    expect(result.error).toContain('prompt failed')
   })
 
-  it('stops looping when issue state is no longer active', async () => {
-    const client: OpenCodeClient = {
-      createSession: vi.fn().mockResolvedValue('session-1'),
-      sendMessage: vi.fn().mockResolvedValue(undefined),
-      getSessionStatus: vi.fn().mockResolvedValue({ id: 'session-1', status: 'completed' } as SessionStatus),
-      deleteSession: vi.fn(),
-      startTurn: vi.fn().mockResolvedValue({ threadId: 't1', turnId: 'turn-1' }),
-    }
-    const runner = new AgentRunner(client, {
-      maxTurns: 10,
-      issueStateFetcher: async () => [makeIssue({ state: 'Done' })],
+  it('handles session error event from SSE', async () => {
+    const client = mockClient({
+      streamItems: [
+        { type: 'session.error', properties: { sessionID: 'session-1', error: { message: 'model error' } } },
+      ],
     })
-    const result = await runner.run(makeIssue(), 'do work')
-    expect(result.success).toBe(true)
-    expect(client.sendMessage).toHaveBeenCalledTimes(1)
+    const runner = new AgentRunner(client)
+    const result = await runner.run(makeIssue(), 'Work')
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('model error')
+  })
+
+  it('auto-approves permission.asked events', async () => {
+    const client = mockClient({
+      streamItems: [
+        { type: 'permission.asked', properties: { sessionID: 'session-1', id: 'perm-1' } },
+        { type: 'session.idle', properties: { sessionID: 'session-1' } },
+      ],
+    })
+    const runner = new AgentRunner(client)
+    await runner.run(makeIssue(), 'Work')
+    expect(client.permission.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ requestID: 'perm-1', reply: 'always' })
+    )
+  })
+
+  it('includes permissions in session create', async () => {
+    const client = mockClient()
+    const runner = new AgentRunner(client)
+    await runner.run(makeIssue(), 'do work')
+    expect(client.session.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        permission: expect.arrayContaining([
+          expect.objectContaining({ permission: 'edit', pattern: '*', action: 'allow' }),
+          expect.objectContaining({ permission: 'bash', pattern: '*', action: 'allow' }),
+          expect.objectContaining({ permission: 'doom_loop', pattern: '*', action: 'allow' }),
+          expect.objectContaining({ permission: 'external_directory', pattern: '*', action: 'allow' }),
+        ]),
+      })
+    )
   })
 })

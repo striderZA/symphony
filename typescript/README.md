@@ -117,6 +117,17 @@ Notes:
 - If a later reload fails, Symphony keeps running with the last known good workflow and logs the
   reload error until the file is fixed.
 
+## Shutdown
+
+**Graceful shutdown:** press `Ctrl+C` once. Symphony stops dispatching new work, waits for active agents to finish, and shuts down the dashboard and server.
+
+**Force kill** — if the process is stuck or unresponsive:
+
+| Platform | Command |
+|----------|---------|
+| macOS/Linux | `pkill -f "bun run"` or `kill -9 $(lsof -ti:4096)` |
+| Windows | `taskkill /F /IM bun.exe` or find the PID via Task Manager |
+
 ## Web dashboard
 
 The observability UI runs on Bun's built-in HTTP server:

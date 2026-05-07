@@ -152,8 +152,23 @@ export class SymphonyOrchestrator {
 
   private async reconcileRunning(): Promise<OrchestratorState> {
     this.state = this.reconcileStalledRuns()
+    this.processRetries()
     this.state = await this.reconcileTrackerStates()
     return this.state
+  }
+
+  private processRetries(): void {
+    const now = Date.now()
+    const toRelease: string[] = []
+    for (const [issueId, retry] of this.state.retryAttempts) {
+      if (now >= retry.dueAtMs) {
+        toRelease.push(issueId)
+      }
+    }
+    for (const issueId of toRelease) {
+      this.state.claimed.delete(issueId)
+      this.state.retryAttempts.delete(issueId)
+    }
   }
 
   async reconcileTrackerStates(): Promise<OrchestratorState> {
@@ -253,6 +268,7 @@ export class SymphonyOrchestrator {
       }
     })()
     this.state.running.set(issue.id, {
+      session: null,
       issueId: issue.id, identifier: issue.identifier, issue,
       sessionId: null, lastCodexEvent: null, lastCodexTimestamp: null, lastCodexMessage: '',
       codexInputTokens: 0, codexOutputTokens: 0, codexTotalTokens: 0,
