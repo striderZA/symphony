@@ -7,11 +7,18 @@ import { HttpOpenCodeClient } from './opencode_client'
 import { WorkspaceManager } from './workspace'
 import { LinearTracker } from './tracker/linear'
 import { logSnapshot } from './status'
+import { parseCliArgs, guardrailsBanner, usageMessage } from './cli'
 
 async function main(): Promise<void> {
-  const args = parseArgs()
+  const args = parseCliArgs(process.argv.slice(2))
+
+  if (!args.acknowledged) {
+    console.error(guardrailsBanner())
+    process.exit(1)
+  }
+
   const logLevel = process.env.SYMPHONY_LOG_LEVEL || 'info'
-  configureLogging({ level: logLevel })
+  configureLogging({ level: logLevel, path: args.logsRoot ? `${args.logsRoot}/symphony.log` : undefined })
   const log = getLogger()
   log.info('symphony_starting')
 
@@ -79,15 +86,6 @@ async function main(): Promise<void> {
   log.info('symphony_started')
   await orch.run()
   log.info('symphony_stopped')
-}
-
-interface CliArgs { workflowPath: string | null }
-function parseArgs(): CliArgs {
-  const args: CliArgs = { workflowPath: null }
-  for (let i = 2; i < process.argv.length; i++) {
-    if (!args.workflowPath) args.workflowPath = process.argv[i]
-  }
-  return args
 }
 
 main().catch((err) => { console.error('Fatal:', err); process.exit(1) })
