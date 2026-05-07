@@ -78,6 +78,15 @@ async function main(): Promise<void> {
     stallTimeoutMs: config.opencode.stallTimeoutMs, maxConcurrentByState: config.agent.maxConcurrentAgentsByState,
   })
 
+  const serverPort = args.port ?? (config as any).server?.port
+  if (serverPort && serverPort > 0) {
+    const { startServer } = await import('./server/index')
+    startServer(
+      { port: serverPort, host: (config as any).server?.host ?? '127.0.0.1' },
+      () => orch.state,
+    )
+  }
+
   orch.addObserver((state) => logSnapshot(state))
   const shutdown = () => { log.info('shutdown_requested'); orch.stop() }
   process.on('SIGINT', shutdown)
