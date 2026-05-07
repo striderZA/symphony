@@ -85,13 +85,25 @@ async function main(): Promise<void> {
     server = startServer(
       { port: serverPort, host: (config as any).server?.host ?? '127.0.0.1' },
       () => orch.state,
+      (issueId) => orch.stopIssue(issueId),
     )
   }
+
+  const dashboardUrl =
+    serverPort && serverPort > 0
+      ? `http://${(config as any).server?.host && (config as any).server.host !== '0.0.0.0' ? (config as any).server.host : '127.0.0.1'}:${serverPort}/`
+      : undefined
+  const { startTerminalDashboard } = await import('./dashboard_terminal')
+  const dashboard = startTerminalDashboard(() => orch.state, {
+    projectSlug: (config as any).tracker?.projectSlug,
+    dashboardUrl,
+  })
 
   orch.addObserver((state) => logSnapshot(state))
   const shutdown = () => {
     log.info('shutdown_requested')
     orch.stop()
+    dashboard.stop()
     if (server) server.stop()
   }
   process.on('SIGINT', shutdown)
