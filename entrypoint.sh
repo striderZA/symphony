@@ -35,4 +35,6 @@ trap cleanup SIGTERM SIGINT
 # Start Symphony
 WORKFLOW_PATH="${WORKFLOW_PATH:-/app/WORKFLOW.md}"
 echo "Starting Symphony with ${WORKFLOW_PATH}..."
-exec bun run /app/src/main.ts "${WORKFLOW_PATH}"
+exec bun run /app/src/main.ts \
+  --i-understand-that-this-will-be-running-without-the-usual-guardrails \
+  "${WORKFLOW_PATH}"
